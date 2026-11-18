@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -47,7 +49,7 @@ class AppSettings(context: Context) {
         private set
     var showNikud by mutableStateOf(if (prefs.contains(KEY_NIKUD)) prefs.getBoolean(KEY_NIKUD, true) else true)
         private set
-    var fontScale by mutableStateOf(readFontScale())
+    var fontScale by mutableFloatStateOf(readFontScale())
         private set
     var appearance by mutableStateOf(AppearanceChoice.fromCode(prefs.getString(KEY_APPEARANCE, null)))
         private set
@@ -144,7 +146,7 @@ class OhrNav {
  */
 class ObservableLibrary(file: File) {
     private val library = UserLibrary(file)
-    var tick by mutableStateOf(0)
+    var tick by mutableIntStateOf(0)
         private set
 
     val lastCommentId: Long? get() { tick; return library.lastCommentId }
