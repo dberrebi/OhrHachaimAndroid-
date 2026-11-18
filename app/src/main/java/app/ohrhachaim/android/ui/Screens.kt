@@ -34,11 +34,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
@@ -71,9 +68,7 @@ import app.ohrhachaim.core.Comment
 import app.ohrhachaim.core.HebrewText
 import app.ohrhachaim.core.HomeDestination
 import app.ohrhachaim.core.ReadingRoute
-import app.ohrhachaim.core.SearchHit
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
@@ -299,35 +294,29 @@ private fun BookScreen(model: OhrViewModel, bookId: Int, onBack: (() -> Unit)?) 
     }
 }
 
-/** Typing pauses this long before a search runs, so each keystroke does not query the index. */
-private const val SEARCH_DEBOUNCE_MS = 250L
-
 @Composable
 private fun SearchScreen(model: OhrViewModel, onBack: (() -> Unit)?) {
     val language = LocalLanguage.current
     val store = model.store
-    var query by remember { mutableStateOf(model.consumePendingSearch()) }
-    // Results stay on screen while the next query runs. [searched] is the query they belong to,
-    // so "no results" only shows once the search for the current text has finished.
-    var results by remember { mutableStateOf<List<SearchHit>>(emptyList()) }
-    var searched by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(query, store) {
-        if (store == null || query.isBlank()) {
-            results = emptyList()
-            searched = query
-            return@LaunchedEffect
-        }
-        delay(SEARCH_DEBOUNCE_MS)
-        val found = withContext(Dispatchers.IO) { store.search(query) }
-        results = found
-        searched = query
+    // The session outlives this screen, so Back from a result restores the query, the results,
+    // and the scroll position. Results stay on screen while the next query runs.
+    val session = model.nav.search
+    val query = session.query
+    val results = session.results
+    LaunchedEffect(session, query, store) {
+        if (store == null) return@LaunchedEffect
+        session.refresh { text -> withContext(Dispatchers.IO) { store.search(text) } }
     }
     StudyScaffold(title = L10n.text("search.title", language), onBack = onBack) { padding ->
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding())) {
-            item {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            state = session.listState,
+            contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding()),
+        ) {
+            item(key = "search.field") {
                 BasicTextField(
                     value = query,
-                    onValueChange = { query = it },
+                    onValueChange = { session.query = it },
                     textStyle = TextStyle(
                         fontFamily = if (language == AppLanguage.HE) LocalHebrew.current else null,
                         fontSize = if (language == AppLanguage.HE) 20.sp else 17.sp,
@@ -359,9 +348,9 @@ private fun SearchScreen(model: OhrViewModel, onBack: (() -> Unit)?) {
                 Hairline()
             }
             if (query.isBlank()) {
-                item { Note(L10n.text("search.empty", language)) }
+                item(key = "search.note") { Note(L10n.text("search.empty", language)) }
             } else if (results.isEmpty()) {
-                if (searched == query) item { Note(L10n.text("search.noResults", language)) }
+                if (session.showsNoResults) item(key = "search.note") { Note(L10n.text("search.noResults", language)) }
             } else {
                 items(results, key = { it.id }) { hit ->
                     FullWidthRow(
@@ -533,7 +522,7 @@ private fun SettingsScreen(model: OhrViewModel, onBack: (() -> Unit)?) {
             )
             Text(
                 L10n.text("about.privacy", language),
-                color = Accent,
+                color = LocalColors.current.accent,
                 fontSize = 17.sp,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -644,7 +633,7 @@ private fun AboutScreen(model: OhrViewModel, onBack: (() -> Unit)?) {
                 Text(L10n.text("about.offline", language), color = colors.secondary, fontSize = 13.sp)
                 Text(
                     L10n.text("about.privacy", language),
-                    color = Accent,
+                    color = LocalColors.current.accent,
                     fontSize = 17.sp,
                     modifier = Modifier.testTag("about.privacy").clickable { openPrivacy(context) },
                 )

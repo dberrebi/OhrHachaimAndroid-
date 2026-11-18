@@ -7,6 +7,9 @@ plugins {
 android {
     namespace = "app.ohrhachaim.android"
     compileSdk = 36
+    // Pinned so a clean SDK needs only the packages in the README and CI. Without it, AGP picks its
+    // own default (35.0.0) and downloads or fails on it.
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "app.ohrhachaim.android"

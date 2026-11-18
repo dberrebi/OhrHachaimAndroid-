@@ -52,7 +52,14 @@ import app.ohrhachaim.core.AppLanguage
 import app.ohrhachaim.core.HebrewText
 
 val Bar = Color(0xFF1C1612)
+/** The iOS gold. On the dark bar and the dark background it reads well (7.7:1). */
 val Accent = Color(0xFFC6A15B)
+
+/**
+ * The gold on the light background measures only 2.16:1, too low for links (4.5:1) and for
+ * the favourite star (3:1). Light mode uses this darker gold instead: 5.34:1 on [BackgroundLight].
+ */
+private val AccentLight = Color(0xFF7D5E1F)
 private val BackgroundLight = Color(0xFFF6F1E7)
 private val BackgroundDark = Color(0xFF141210)
 private val TextLight = Color(0xFF221C16)
@@ -67,6 +74,8 @@ data class StudyColors(
     val text: Color,
     val secondary: Color,
     val emphasis: Color,
+    /** Links and the favourite star on the page background. */
+    val accent: Color,
     val divider: Color,
     val dark: Boolean,
 )
@@ -76,6 +85,7 @@ private val LightColors = StudyColors(
     text = TextLight,
     secondary = SecondaryLight,
     emphasis = EmphasisLight,
+    accent = AccentLight,
     divider = Color.Black.copy(alpha = 0.14f),
     dark = false,
 )
@@ -85,6 +95,7 @@ private val DarkColors = StudyColors(
     text = TextDark,
     secondary = SecondaryDark,
     emphasis = EmphasisDark,
+    accent = Accent,
     divider = Color.White.copy(alpha = 0.16f),
     dark = true,
 )
@@ -133,7 +144,7 @@ fun OhrTheme(appearance: AppearanceChoice, content: @Composable () -> Unit) {
         lightColorScheme(
             primary = EmphasisLight,
             onPrimary = Color.White,
-            secondary = Accent,
+            secondary = AccentLight,
             background = BackgroundLight,
             surface = BackgroundLight,
             onBackground = TextLight,
