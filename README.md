@@ -17,7 +17,7 @@ Requirements: JDK 17 or 21, Android SDK 36, and build-tools 36.0.0.
 
 `test` runs the JVM unit tests (reading calendar, nikud-insensitive search against the bundled database, history) and the Android unit-test task. The database checksum is checked again during `assembleDebug`.
 
-The application id is `app.ohrhachaim.android`. That id is a placeholder until Freedom confirms it. It cannot be changed after the first Play listing.
+The application id is `app.ohrhachaim.android`. It is final: Google Play does not allow changing it after the first listing.
 
 minSdk is 26. targetSdk and compileSdk are 36. There is no `INTERNET` permission.
 
@@ -59,10 +59,10 @@ On a wide window the home list stays beside the detail, with a welcome pane unti
 - Reading calendar: [Hebcal.com](https://www.hebcal.com), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The required credit is the `hebcal_attribution` value in the database.
 - Typeface: Noto Serif Hebrew, © 2022 The Noto Project Authors, [SIL Open Font License 1.1](app/src/main/assets/licenses/OFL.txt). The licence file is in the APK next to the font. The font is not sold by itself.
 
-The code licence for this repository is not chosen yet. Do not add one until Freedom decides.
+- Code: the Kotlin source, build files, and scripts in this repository are licensed under the [GNU General Public License, version 3](LICENSE) (GPL-3.0). The licences above still apply to the commentary, calendar, and font that the app bundles.
 
 ## Not in this version
 
-No Play upload, no Play Billing, no PayPal link, and no donate button. The iOS support site is not linked: that page includes a PayPal donation. Settings and About open the iOS privacy URL, which is what the iOS app does. Whether that page may be linked from Android is an open question, because the privacy page links back to the support page. See the TODO on `AppLinks`.
+No Play upload, no Play Billing, no PayPal link, and no donate button. The iOS support site is not linked: that page includes a PayPal donation. Settings and About open the iOS privacy URL, which is what the iOS app does. That page links on to the support page; linking it from Android was approved. The support page itself is not linked from the app. See `AppLinks`.
 
 No widgets, notifications, accounts, or sync. History, favourites, and settings stay on the device. Backup of app data is turned off.

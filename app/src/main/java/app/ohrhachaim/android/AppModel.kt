@@ -29,11 +29,10 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * The iOS app defines a support URL and does not open it from any screen.
- * TODO(Freedom): Do not link https://dberrebi.github.io/OhrHachaim/ from this app unless you
- * approve it. That page includes a PayPal donation, which must not be reachable from the Android
- * app or the Play listing. The privacy page linked below currently links back to that support
- * page; confirm the destination before a Play listing uses it.
+ * The privacy page is the one the iOS app opens. It links on to the support page, which has a
+ * PayPal donation; linking the privacy page from Android was approved on that basis.
+ * The support page (https://dberrebi.github.io/OhrHachaim/) is not linked directly from the app,
+ * matching iOS, which defines that URL but never opens it.
  */
 object AppLinks {
     const val PRIVACY = "https://dberrebi.github.io/OhrHachaim/privacy/"
