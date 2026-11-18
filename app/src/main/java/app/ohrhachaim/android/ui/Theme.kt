@@ -1,6 +1,7 @@
 package app.ohrhachaim.android.ui
 
 import android.app.Activity
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -147,7 +148,12 @@ fun OhrTheme(appearance: AppearanceChoice, content: @Composable () -> Unit) {
             val controller = WindowCompat.getInsetsController(window, view)
             controller.isAppearanceLightStatusBars = false
             controller.isAppearanceLightNavigationBars = !dark
-            window.navigationBarColor = if (dark) 0xFF141210.toInt() else 0xFFF6F1E7.toInt()
+            // Android 15+ draws the app behind a transparent navigation bar and ignores this colour;
+            // there the screen background already shows through. Older versions still need it.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                @Suppress("DEPRECATION")
+                window.navigationBarColor = if (dark) 0xFF141210.toInt() else 0xFFF6F1E7.toInt()
+            }
         }
     }
     MaterialTheme(colorScheme = scheme) {
@@ -238,7 +244,7 @@ fun StudyScaffold(
                     }
                 },
                 actions = actions,
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Bar,
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White,

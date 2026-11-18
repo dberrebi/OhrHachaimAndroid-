@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -27,11 +29,10 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * The iOS app defines a support URL and does not open it from any screen.
- * TODO(Freedom): Do not link https://dberrebi.github.io/OhrHachaim/ from this app unless you
- * approve it. That page includes a PayPal donation, which must not be reachable from the Android
- * app or the Play listing. The privacy page linked below currently links back to that support
- * page; confirm the destination before a Play listing uses it.
+ * The privacy page is the one the iOS app opens. It links on to the support page, which has a
+ * PayPal donation; linking the privacy page from Android was approved on that basis.
+ * The support page (https://dberrebi.github.io/OhrHachaim/) is not linked directly from the app,
+ * matching iOS, which defines that URL but never opens it.
  */
 object AppLinks {
     const val PRIVACY = "https://dberrebi.github.io/OhrHachaim/privacy/"
@@ -47,7 +48,7 @@ class AppSettings(context: Context) {
         private set
     var showNikud by mutableStateOf(if (prefs.contains(KEY_NIKUD)) prefs.getBoolean(KEY_NIKUD, true) else true)
         private set
-    var fontScale by mutableStateOf(readFontScale())
+    var fontScale by mutableFloatStateOf(readFontScale())
         private set
     var appearance by mutableStateOf(AppearanceChoice.fromCode(prefs.getString(KEY_APPEARANCE, null)))
         private set
@@ -144,7 +145,7 @@ class OhrNav {
  */
 class ObservableLibrary(file: File) {
     private val library = UserLibrary(file)
-    var tick by mutableStateOf(0)
+    var tick by mutableIntStateOf(0)
         private set
 
     val lastCommentId: Long? get() { tick; return library.lastCommentId }
