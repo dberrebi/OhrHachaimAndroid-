@@ -1,19 +1,25 @@
 package app.ohrhachaim.android.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import app.ohrhachaim.android.L10n
 import app.ohrhachaim.android.OhrViewModel
 import app.ohrhachaim.android.deviceToday
@@ -47,18 +53,32 @@ fun HomeScreen(model: OhrViewModel, onOpen: (HomeDestination) -> Unit) {
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding()),
         ) {
-            items(rows, key = { it.tag }) { row ->
-                FullWidthRow(
-                    onClick = { onOpen(row.destination) },
-                    modifier = Modifier.testTag(row.tag),
-                ) {
-                    CenteredTitle(row.title, row.subtitle)
+            // The books come from the database. On first launch it is copied and verified first,
+            // so a spinner stands in for them until it is ready.
+            val booksAt = rows.indexOfFirst { it.tag == "home.search" } + 1
+            items(rows.take(booksAt), key = { it.tag }) { row -> HomeRowItem(row, onOpen) }
+            if (store == null && !model.failed) {
+                item(key = "home.loading") {
+                    Box(
+                        Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(color = LocalColors.current.emphasis)
+                    }
                 }
             }
-            if (store == null && !model.failed) {
-                item { }
-            }
+            items(rows.drop(booksAt), key = { it.tag }) { row -> HomeRowItem(row, onOpen) }
         }
+    }
+}
+
+@Composable
+private fun HomeRowItem(row: HomeRow, onOpen: (HomeDestination) -> Unit) {
+    FullWidthRow(
+        onClick = { onOpen(row.destination) },
+        modifier = Modifier.testTag(row.tag),
+    ) {
+        CenteredTitle(row.title, row.subtitle)
     }
 }
 

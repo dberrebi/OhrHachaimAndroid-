@@ -1,11 +1,14 @@
 package app.ohrhachaim.core
 
+import java.util.Locale
+
 /**
  * A Gregorian calendar day, with no clock and no time zone.
  * Day differences match `Calendar.dateComponents([.day])` in the iOS reader.
  */
 data class IsoDay(val year: Int, val month: Int, val day: Int) : Comparable<IsoDay> {
-    val text: String get() = "%04d-%02d-%02d".format(year, month, day)
+    /** Always ASCII digits, so it matches `weekly.gregorian_date` whatever the device language. */
+    val text: String get() = String.format(Locale.US, "%04d-%02d-%02d", year, month, day)
 
     fun toEpochDay(): Long = daysFromCivil(year, month, day)
 

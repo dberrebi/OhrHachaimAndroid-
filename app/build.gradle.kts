@@ -36,10 +36,8 @@ android {
         buildConfig = true
     }
 
-    androidResources {
-        noCompress += "sqlite"
-    }
-
+    // The database is stored compressed in the APK (about 4.6 MB instead of 17.6 MB). The app
+    // streams it into private storage on first launch, so it is never read in place.
     sourceSets.named("main") {
         assets.srcDir(rootProject.layout.projectDirectory.dir("data"))
     }

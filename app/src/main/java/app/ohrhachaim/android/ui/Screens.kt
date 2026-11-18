@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -32,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +71,10 @@ import app.ohrhachaim.core.Comment
 import app.ohrhachaim.core.HebrewText
 import app.ohrhachaim.core.HomeDestination
 import app.ohrhachaim.core.ReadingRoute
+import app.ohrhachaim.core.SearchHit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -144,15 +150,18 @@ private fun TabletFrame(model: OhrViewModel) {
 
 @Composable
 private fun SectionScreen(model: OhrViewModel, section: HomeDestination, onBack: (() -> Unit)?) {
-    if (model.failed || model.store == null && section !is HomeDestination.Settings &&
-        section !is HomeDestination.Help && section !is HomeDestination.About
-    ) {
-        if (model.store == null && !model.failed) {
-            MessageScreen(model, L10n.text("app.title", LocalLanguage.current), null, onBack)
+    // Settings, Help, and About work without the commentary, including when it failed to load.
+    val needsCommentary = section !is HomeDestination.Settings &&
+        section !is HomeDestination.Help &&
+        section !is HomeDestination.About
+    if (needsCommentary) {
+        val title = L10n.text("app.title", LocalLanguage.current)
+        if (model.failed || model.store?.loadError != null) {
+            MessageScreen(model, title, L10n.text("data.missing", LocalLanguage.current), onBack)
             return
         }
-        if (model.failed || model.store?.loadError != null) {
-            MessageScreen(model, L10n.text("app.title", LocalLanguage.current), L10n.text("data.missing", LocalLanguage.current), onBack)
+        if (model.store == null) {
+            MessageScreen(model, title, null, onBack)
             return
         }
     }
@@ -211,6 +220,9 @@ fun MessageScreen(model: OhrViewModel, title: String, message: String?, onBack: 
                     style = menuStyle().copy(color = LocalColors.current.secondary),
                     textAlign = TextAlign.Center,
                 )
+            } else {
+                // No message means the commentary is still being prepared.
+                CircularProgressIndicator(color = LocalColors.current.emphasis)
             }
         }
     }
@@ -287,13 +299,28 @@ private fun BookScreen(model: OhrViewModel, bookId: Int, onBack: (() -> Unit)?) 
     }
 }
 
+/** Typing pauses this long before a search runs, so each keystroke does not query the index. */
+private const val SEARCH_DEBOUNCE_MS = 250L
+
 @Composable
 private fun SearchScreen(model: OhrViewModel, onBack: (() -> Unit)?) {
     val language = LocalLanguage.current
     val store = model.store
     var query by remember { mutableStateOf(model.consumePendingSearch()) }
-    val results = remember(query, store, model.settings.showNikud) {
-        if (store == null || query.isBlank()) emptyList() else store.search(query)
+    // Results stay on screen while the next query runs. [searched] is the query they belong to,
+    // so "no results" only shows once the search for the current text has finished.
+    var results by remember { mutableStateOf<List<SearchHit>>(emptyList()) }
+    var searched by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(query, store) {
+        if (store == null || query.isBlank()) {
+            results = emptyList()
+            searched = query
+            return@LaunchedEffect
+        }
+        delay(SEARCH_DEBOUNCE_MS)
+        val found = withContext(Dispatchers.IO) { store.search(query) }
+        results = found
+        searched = query
     }
     StudyScaffold(title = L10n.text("search.title", language), onBack = onBack) { padding ->
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding())) {
@@ -334,7 +361,7 @@ private fun SearchScreen(model: OhrViewModel, onBack: (() -> Unit)?) {
             if (query.isBlank()) {
                 item { Note(L10n.text("search.empty", language)) }
             } else if (results.isEmpty()) {
-                item { Note(L10n.text("search.noResults", language)) }
+                if (searched == query) item { Note(L10n.text("search.noResults", language)) }
             } else {
                 items(results, key = { it.id }) { hit ->
                     FullWidthRow(

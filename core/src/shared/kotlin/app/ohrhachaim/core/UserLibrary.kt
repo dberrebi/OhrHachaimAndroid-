@@ -1,6 +1,7 @@
 package app.ohrhachaim.core
 
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -20,6 +21,9 @@ data class HistoryEntry(
  * Resume, history, and favourites. History is capped at 40 and keeps one row per parasha.
  * Writes wait 400ms, matching the iOS library file. An unreadable file is copied aside and the
  * library starts empty.
+ *
+ * Every write runs on one background thread, in the order it was requested, so an older
+ * snapshot can never land on disk after a newer one.
  */
 class UserLibrary(
     private val file: File,
@@ -49,7 +53,7 @@ class UserLibrary(
         } else {
             listOf(id) + favouriteIds
         }
-        flush()
+        saveNow()
     }
 
     /** Records reading progress for the parasha. Scrolling inside one parasha updates that row. */
@@ -95,18 +99,36 @@ class UserLibrary(
         return ReadingRoute.Introduction(comment.id)
     }
 
+    /** Writes the current state and waits for it, for example when the app goes to the background. */
     fun flush() {
-        val snapshot = snapshot()
-        synchronized(this) {
+        val done = synchronized(this) {
+            if (writer.isShutdown) return
             pending?.cancel(false)
             pending = null
+            val snapshot = snapshot()
+            writer.submit { write(snapshot) }
         }
-        write(snapshot)
+        try {
+            done.get(5, TimeUnit.SECONDS)
+        } catch (_: Exception) {
+            // The write is still queued, or failed and left the previous file in place.
+        }
     }
 
     fun close() {
         flush()
-        writer.shutdown()
+        synchronized(this) { writer.shutdown() }
+    }
+
+    /** Queues a write of the current state without waiting for it. */
+    private fun saveNow() {
+        synchronized(this) {
+            if (writer.isShutdown) return
+            pending?.cancel(false)
+            pending = null
+            val snapshot = snapshot()
+            writer.execute { write(snapshot) }
+        }
     }
 
     private fun nowIso(): String {
@@ -116,13 +138,14 @@ class UserLibrary(
         val hour = sod / 3600
         val minute = (sod % 3600) / 60
         val second = sod % 60
-        return "%sT%02d:%02d:%02dZ".format(day.text, hour, minute, second)
+        return String.format(Locale.US, "%sT%02d:%02d:%02dZ", day.text, hour, minute, second)
     }
 
     private fun scheduleSave() {
-        val snapshot = snapshot()
         synchronized(this) {
+            if (writer.isShutdown) return
             pending?.cancel(false)
+            val snapshot = snapshot()
             pending = writer.schedule({ write(snapshot) }, 400, TimeUnit.MILLISECONDS)
         }
     }
@@ -147,6 +170,7 @@ class UserLibrary(
         }
     }
 
+    /** Runs only on [writer]. */
     private fun write(snapshot: LibrarySnapshot) {
         try {
             file.parentFile?.mkdirs()

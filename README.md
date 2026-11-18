@@ -33,7 +33,7 @@ Do not edit the database in this repository, and do not rebuild it here. The iOS
 2. Copy **both** `OhrHaChaim/OhrHaChaim/Resources/ohr_hachaim.sqlite` and `data/manifest.json` into this repository's `data/` directory.
 3. Ship that same database to both apps, so comment ids (favourites, resume) and weekly rows stay aligned.
 
-`./gradlew verifyDatabase` fails the build if the SHA-256 of the sqlite file does not match `sha256` in the manifest. The app copies the asset into private storage on first launch, checks the same checksum, and opens it read-only with `androidx.sqlite` `BundledSQLiteDriver`. Android's platform SQLite is not compiled with FTS5. The bundled driver is, which is what `comments_fts` needs. Startup refuses to treat the corpus as loaded if FTS5 is missing.
+`./gradlew verifyDatabase` fails the build if the SHA-256 of the sqlite file does not match `sha256` in the manifest. The app copies the asset into private storage on first launch, and again after any update whose manifest checksum differs from the installed copy (even when the file size is unchanged). It verifies the checksum before replacing the installed file, and opens it read-only with `androidx.sqlite` `BundledSQLiteDriver`. Android's platform SQLite is not compiled with FTS5. The bundled driver is, which is what `comments_fts` needs. Startup refuses to treat the corpus as loaded if FTS5 is missing.
 
 Readings outside 2024–2038 need a new run of the iOS script and a new database in both apps. This app does not calculate the Hebrew calendar on the device.
 

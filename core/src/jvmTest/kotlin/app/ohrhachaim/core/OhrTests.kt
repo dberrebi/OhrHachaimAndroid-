@@ -6,8 +6,13 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertThrows
 import java.io.File
 import java.security.MessageDigest
+import java.util.Locale
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 
 class OhrTests {
     @Test
@@ -201,6 +206,143 @@ class OhrTests {
         assertTrue(names.any { it.contains("corrupt-") })
         library.close()
     }
+
+    @Test
+    fun datesUseAsciiDigitsInAnyDeviceLanguage() {
+        val saved = Locale.getDefault()
+        try {
+            // Arabic and Persian format %d with their own digits by default.
+            for (tag in listOf("ar-EG", "fa-IR")) {
+                Locale.setDefault(Locale.forLanguageTag(tag))
+                assertEquals("2026-11-21", day("2026-11-21").text)
+                store().use { store ->
+                    // On Shabbat itself the match is exact; it must not fall back to last week.
+                    assertEquals(listOf(7), store.currentReading(true, day("2026-11-21"))?.parashaIds)
+                    assertEquals(listOf(7), store.currentReading(false, day("2026-11-21"))?.parashaIds)
+                }
+                val file = tempLibrary()
+                UserLibrary(file, clockMillis = { 1_795_000_000_000L }).apply {
+                    note(comment(id = 1, parashaId = 1, chapter = 1, verse = 1))
+                    close()
+                }
+                assertTrue(file.readText().contains("\"2026-11-18T"))
+            }
+        } finally {
+            Locale.setDefault(saved)
+        }
+    }
+
+    @Test
+    fun databaseUpdateOfTheSameSizeIsInstalled() {
+        val directory = tempDirectory()
+        val v1 = ByteArray(8192) { 1 }
+        val v2 = ByteArray(8192) { 2 }
+
+        val first = DatabaseInstaller.install(directory, bundle(v1))
+        assertArrayEquals(v1, first.readBytes())
+
+        // The next launch of the same build reuses the copy without reading the database asset.
+        val opened = mutableListOf<String>()
+        DatabaseInstaller.install(directory) { name -> opened += name; bundle(v1)(name) }
+        assertEquals(listOf(DatabaseInstaller.MANIFEST), opened)
+
+        // An app update that ships a different database with the same byte count replaces it.
+        val updated = DatabaseInstaller.install(directory, bundle(v2))
+        assertArrayEquals(v2, updated.readBytes())
+        assertEquals(DatabaseInstaller.hex(sha256(v2)), File(directory, "ohr_hachaim.sqlite.sha256").readText())
+    }
+
+    @Test
+    fun badBundleKeepsTheInstalledDatabase() {
+        val directory = tempDirectory()
+        val good = ByteArray(4096) { 3 }
+        DatabaseInstaller.install(directory, bundle(good))
+        val manifest = manifestFor(ByteArray(4096) { 4 })
+        assertThrows(IllegalStateException::class.java) {
+            DatabaseInstaller.install(directory) { name ->
+                if (name == DatabaseInstaller.MANIFEST) manifest.byteInputStream() else good.inputStream()
+            }
+        }
+        assertArrayEquals(good, File(directory, DatabaseInstaller.DATABASE).readBytes())
+        assertFalse(File(directory, DatabaseInstaller.DATABASE + ".part").exists())
+    }
+
+    @Test
+    fun bundledManifestMatchesTheInstallerChecksum() {
+        val directory = tempDirectory()
+        val installed = DatabaseInstaller.install(directory) { name -> repoFile("data/$name").inputStream() }
+        assertEquals(
+            DatabaseInstaller.sha256In(repoFile("data/manifest.json").readText()),
+            DatabaseInstaller.sha256(installed),
+        )
+    }
+
+    @Test
+    fun favouritesAndHistoryAreBothSaved() {
+        val file = tempLibrary()
+        val library = UserLibrary(file)
+        library.note(comment(id = 5, parashaId = 1, chapter = 1, verse = 2))
+        library.toggleFavourite(5)
+        library.note(comment(id = 6, parashaId = 1, chapter = 1, verse = 3))
+        library.toggleFavourite(6)
+        library.flush()
+        val reloaded = UserLibrary(file)
+        assertEquals(listOf(6L, 5L), reloaded.favouriteIds)
+        assertEquals(6L, reloaded.lastCommentId)
+        assertEquals(6L, reloaded.history.single().commentId)
+        library.close()
+        // Calls after close are ignored rather than throwing.
+        library.flush()
+        library.toggleFavourite(7)
+        library.close()
+        reloaded.close()
+    }
+
+    @Test
+    fun storePreloadsAndServesSeveralThreads() {
+        store().use { store ->
+            val weekly = ReadingRoute.Weekly(listOf(39, 40), null)
+            val introduction = ReadingRoute.Introduction(null)
+            assertFalse(store.isLoaded(weekly))
+            assertFalse(store.isLoaded(introduction))
+            store.preload(weekly)
+            store.preload(introduction)
+            assertTrue(store.isLoaded(weekly))
+            assertTrue(store.isLoaded(introduction))
+            assertTrue(store.isLoaded(ReadingRoute.Parasha(39, null)))
+            assertFalse(store.isLoaded(ReadingRoute.Parasha(1, null)))
+
+            val pool = Executors.newFixedThreadPool(4)
+            try {
+                val jobs = (1..54).map { id ->
+                    Callable {
+                        store.comments(id).size + store.gapChapters(id).size + store.search("אור").size
+                    }
+                }
+                pool.invokeAll(jobs).forEach { it.get() }
+            } finally {
+                pool.shutdown()
+            }
+            assertTrue((1..54).all { store.isLoaded(ReadingRoute.Parasha(it, null)) })
+            assertEquals(5_864, (1..54).sumOf { store.comments(it).size })
+        }
+    }
+
+    private fun bundle(database: ByteArray): (String) -> java.io.InputStream = { name ->
+        when (name) {
+            DatabaseInstaller.MANIFEST -> manifestFor(database).byteInputStream()
+            DatabaseInstaller.DATABASE -> database.inputStream()
+            else -> error(name)
+        }
+    }
+
+    private fun manifestFor(database: ByteArray): String =
+        """{"sha256": "${DatabaseInstaller.hex(sha256(database))}", "bytes": ${database.size}}"""
+
+    private fun sha256(bytes: ByteArray): ByteArray = MessageDigest.getInstance("SHA-256").digest(bytes)
+
+    private fun tempDirectory(): File =
+        File(System.getProperty("java.io.tmpdir"), "ohr-" + System.nanoTime()).also { it.mkdirs() }
 
     private fun store(): CommentaryStore = CommentaryStore.open(repoFile("data/ohr_hachaim.sqlite").absolutePath)
 

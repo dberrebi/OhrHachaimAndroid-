@@ -1,8 +1,12 @@
 name: Android
 
+# Pull requests are built through pull_request; push only builds main, so one push does not
+# start two identical runs.
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   build:

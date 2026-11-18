@@ -14,6 +14,7 @@ import app.ohrhachaim.core.AppearanceChoice
 import app.ohrhachaim.core.AppLanguage
 import app.ohrhachaim.core.Comment
 import app.ohrhachaim.core.CommentaryStore
+import app.ohrhachaim.core.DatabaseInstaller
 import app.ohrhachaim.core.HistoryEntry
 import app.ohrhachaim.core.HomeDestination
 import app.ohrhachaim.core.IsoDay
@@ -24,7 +25,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.security.MessageDigest
 
 /**
  * The iOS app defines a support URL and does not open it from any screen.
@@ -188,7 +188,7 @@ class OhrViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val file = DatabaseInstaller.install(app)
+                val file = DatabaseInstaller.install(app.filesDir) { name -> app.assets.open(name) }
                 val opened = CommentaryStore.open(file.absolutePath)
                 withContext(Dispatchers.Main) {
                     store = opened
@@ -200,8 +200,13 @@ class OhrViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Debug builds only: lets screenshot and UI tests open a screen in a chosen language and
+     * appearance. Release builds ignore these extras, because the launcher activity is exported and
+     * any app could otherwise change the saved settings.
+     */
     fun applyLaunch(intent: Intent) {
-        if (launchApplied) return
+        if (launchApplied || !BuildConfig.DEBUG) return
         launchApplied = true
         intent.getStringExtra("ohr_language")?.let { settings.chooseLanguage(AppLanguage.fromCode(it)) }
         intent.getStringExtra("ohr_appearance")?.let { settings.chooseAppearance(AppearanceChoice.fromCode(it)) }
@@ -226,67 +231,7 @@ class OhrViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        library.flush()
-        store?.close()
         library.close()
-    }
-}
-
-object DatabaseInstaller {
-    fun install(context: Context): File {
-        val out = File(context.filesDir, "ohr_hachaim.sqlite")
-        val stamp = File(context.filesDir, "ohr_hachaim.sqlite.sha256")
-        val manifest = context.assets.open("manifest.json").bufferedReader().use { it.readText() }
-        val expected = hashIn(manifest)
-        val expectedBytes = bytesIn(manifest)
-        if (out.isFile && out.length() == expectedBytes && stamp.isFile && stamp.readText().trim() == expected) {
-            return out
-        }
-        if (!out.isFile || out.length() != expectedBytes) {
-            context.assets.open("ohr_hachaim.sqlite").use { input ->
-                File(out.parentFile, out.name + ".part").outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
-            val part = File(out.parentFile, out.name + ".part")
-            if (out.exists()) out.delete()
-            if (!part.renameTo(out)) {
-                part.copyTo(out, overwrite = true)
-                part.delete()
-            }
-        }
-        val actual = sha256(out)
-        check(actual == expected) {
-            "Bundled ohr_hachaim.sqlite SHA-256 is $actual, manifest expects $expected"
-        }
-        stamp.writeText(expected)
-        return out
-    }
-
-    private fun hashIn(manifest: String): String =
-        Regex(""""sha256"\s*:\s*"([0-9a-fA-F]+)"""")
-            .find(manifest)
-            ?.groupValues
-            ?.get(1)
-            ?.lowercase()
-            ?: error("manifest.json has no sha256")
-
-    private fun bytesIn(manifest: String): Long {
-        val matches = Regex(""""bytes"\s*:\s*(\d+)""").findAll(manifest).toList()
-        return matches.firstOrNull()?.groupValues?.get(1)?.toLong()
-            ?: error("manifest.json has no bytes")
-    }
-
-    private fun sha256(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val buffer = ByteArray(1024 * 64)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        store?.close()
     }
 }

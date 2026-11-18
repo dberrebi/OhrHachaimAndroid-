@@ -4,6 +4,11 @@ package app.ohrhachaim.core
  * Read-only view of the bundled `ohr_hachaim.sqlite`.
  * `currentReading` is the iOS rule: today's row, else the next row 1–6 days ahead,
  * else the latest row 1–10 days back.
+ *
+ * Safe to call from more than one thread. [lock] guards only the in-memory caches and is never
+ * held during a query, so a background read cannot block a lookup on the main thread. The
+ * connection serializes the statements themselves. Two threads may occasionally read the same
+ * rows at once; the first result stored is the one every caller gets.
  */
 class CommentaryStore internal constructor(
     private val session: SqlSession,
@@ -19,6 +24,7 @@ class CommentaryStore internal constructor(
     var loadError: String? = null
         private set
 
+    private val lock = Any()
     private val commentsByParasha = mutableMapOf<Int, List<Comment>>()
     private var introductionCache: List<Comment>? = null
     private val gapsByParasha = mutableMapOf<Int, List<Int>>()
@@ -44,7 +50,7 @@ class CommentaryStore internal constructor(
     fun hasIntroduction(bookId: Int): Boolean = bookId == 1 && introduction().isNotEmpty()
 
     fun introduction(): List<Comment> {
-        introductionCache?.let { return it }
+        synchronized(lock) { introductionCache }?.let { return it }
         val rows = comments(
             """
             SELECT id, book_id, parasha_id, chapter, verse, comment_index, dibbur, body, source
@@ -53,12 +59,11 @@ class CommentaryStore internal constructor(
             ORDER BY verse, comment_index
             """.trimIndent(),
         )
-        introductionCache = rows
-        return rows
+        return synchronized(lock) { introductionCache ?: rows.also { introductionCache = it } }
     }
 
     fun comments(parashaId: Int): List<Comment> {
-        commentsByParasha[parashaId]?.let { return it }
+        synchronized(lock) { commentsByParasha[parashaId] }?.let { return it }
         val rows = comments(
             """
             SELECT id, book_id, parasha_id, chapter, verse, comment_index, dibbur, body, source
@@ -67,8 +72,33 @@ class CommentaryStore internal constructor(
             ORDER BY chapter, verse, comment_index
             """.trimIndent(),
         ) { it.bindLong(1, parashaId.toLong()) }
-        commentsByParasha[parashaId] = rows
-        return rows
+        return synchronized(lock) { commentsByParasha.getOrPut(parashaId) { rows } }
+    }
+
+    /** True when everything [route] shows is already in memory, so reading it does no I/O. */
+    fun isLoaded(route: ReadingRoute): Boolean = synchronized(lock) {
+        when (route) {
+            is ReadingRoute.Introduction -> introductionCache != null
+            is ReadingRoute.Parasha -> isLoaded(route.id)
+            is ReadingRoute.Weekly -> route.ids.all { isLoaded(it) }
+        }
+    }
+
+    /** Reads everything [route] shows into memory. Call it off the main thread. */
+    fun preload(route: ReadingRoute) {
+        when (route) {
+            is ReadingRoute.Introduction -> introduction()
+            is ReadingRoute.Parasha -> preload(route.id)
+            is ReadingRoute.Weekly -> route.ids.forEach { preload(it) }
+        }
+    }
+
+    private fun isLoaded(parashaId: Int): Boolean =
+        parashaId in commentsByParasha && parashaId in gapsByParasha
+
+    private fun preload(parashaId: Int) {
+        comments(parashaId)
+        gapChapters(parashaId)
     }
 
     fun search(rawQuery: String, limit: Int = 40): List<SearchHit> {
@@ -99,10 +129,10 @@ class CommentaryStore internal constructor(
     }
 
     fun comment(id: Long): Comment? {
-        commentsByParasha.values.forEach { list ->
-            list.firstOrNull { it.id == id }?.let { return it }
-        }
-        introductionCache?.firstOrNull { it.id == id }?.let { return it }
+        synchronized(lock) {
+            commentsByParasha.values.firstNotNullOfOrNull { list -> list.firstOrNull { it.id == id } }
+                ?: introductionCache?.firstOrNull { it.id == id }
+        }?.let { return it }
         return comments(
             """
             SELECT id, book_id, parasha_id, chapter, verse, comment_index, dibbur, body, source
@@ -114,13 +144,12 @@ class CommentaryStore internal constructor(
     }
 
     fun gapChapters(parashaId: Int): List<Int> {
-        gapsByParasha[parashaId]?.let { return it }
+        synchronized(lock) { gapsByParasha[parashaId] }?.let { return it }
         val chapters = session.query(
             "SELECT chapter FROM gaps WHERE parasha_id = ? ORDER BY chapter",
             bind = { it.bindLong(1, parashaId.toLong()) },
         ) { it.getInt(0) }
-        gapsByParasha[parashaId] = chapters
-        return chapters
+        return synchronized(lock) { gapsByParasha.getOrPut(parashaId) { chapters } }
     }
 
     fun title(parashaIds: List<Int>, language: AppLanguage): String {
@@ -140,13 +169,13 @@ class CommentaryStore internal constructor(
      * The reading for "this week": today's row, otherwise the one coming within six days,
      * otherwise the most recent reading in the last ten days.
      */
-    fun currentReading(israel: Boolean, today: IsoDay): WeeklyReading? {
+    fun currentReading(israel: Boolean, today: IsoDay): WeeklyReading? = synchronized(lock) {
         val key = "${today.text}#${if (israel) 1 else 0}"
-        if (key == readingCacheKey) return readingCacheValue
-        val value = resolveReading(israel, today)
-        readingCacheKey = key
-        readingCacheValue = value
-        return value
+        if (key != readingCacheKey) {
+            readingCacheValue = resolveReading(israel, today)
+            readingCacheKey = key
+        }
+        readingCacheValue
     }
 
     fun readingCovers(today: IsoDay): Boolean {

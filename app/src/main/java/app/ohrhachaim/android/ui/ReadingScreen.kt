@@ -16,8 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.DropdownMenu
@@ -32,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -39,9 +39,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -61,10 +67,12 @@ import app.ohrhachaim.core.CommentaryStore
 import app.ohrhachaim.core.HebrewNumerals
 import app.ohrhachaim.core.HebrewText
 import app.ohrhachaim.core.ReadingRoute
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val SETTLE_MS = 4_000L
 private const val OPENING_MS = 20_000L
@@ -74,10 +82,19 @@ fun ReadingScreen(model: OhrViewModel, route: ReadingRoute, onBack: (() -> Unit)
     val store = model.store ?: return
     val language = LocalLanguage.current
     val context = LocalContext.current
-    val rows = remember(route, store) { readingRows(store, route) }
+    // The first visit to a parasha reads it from the database off the main thread. Later visits,
+    // and recreating the screen after rotation, find it in memory and lay it out immediately.
+    var loaded by remember(route, store) { mutableStateOf(store.isLoaded(route)) }
+    LaunchedEffect(route, store) {
+        if (!loaded) {
+            withContext(Dispatchers.IO) { store.preload(route) }
+            loaded = true
+        }
+    }
+    val rows = remember(route, store, loaded) { if (loaded) readingRows(store, route) else emptyList() }
     val listState = rememberLazyListState()
     val title = readingTitle(store, route, language)
-    TrackReading(model, store, route, listState)
+    TrackReading(model, store, route, rows, listState)
     StudyScaffold(
         title = title,
         onBack = onBack,
@@ -125,6 +142,7 @@ private fun TrackReading(
     model: OhrViewModel,
     store: CommentaryStore,
     route: ReadingRoute,
+    rows: List<ReadingRow>,
     listState: LazyListState,
 ) {
     val density = LocalDensity.current
@@ -136,12 +154,18 @@ private fun TrackReading(
     var tracked by remember(route) { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
     var dwell by remember(route) { mutableStateOf<Job?>(null) }
+    // Saved across rotation, so turning the device does not jump back to the target.
+    var targetShown by rememberSaveable(route) { mutableStateOf(false) }
 
-    LaunchedEffect(route) {
+    LaunchedEffect(route, rows) {
         val target = route.scrollTarget ?: return@LaunchedEffect
-        val index = readingRows(store, route).indexOfFirst { it.key == target }
-        if (index >= 0) listState.scrollToItem(index)
-        delay(200)
+        if (rows.isEmpty()) return@LaunchedEffect
+        if (!targetShown) {
+            val index = rows.indexOfFirst { it.key == target }
+            if (index >= 0) listState.scrollToItem(index)
+            targetShown = true
+            delay(200)
+        }
         allowTracking = true
     }
 
@@ -226,14 +250,17 @@ private fun VerseBlock(chapter: Int, verse: Int, language: AppLanguage) {
     )
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CommentBlock(model: OhrViewModel, store: CommentaryStore, comment: Comment, language: AppLanguage) {
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val favourite = model.library.isFavourite(comment.id)
     var menu by remember(comment.id) { mutableStateOf(false) }
     val spoken = HebrewText.plain(comment.body, stripNikud = true)
     val size = model.settings.commentarySize
+    val actionsLabel = L10n.text("a11y.passageActions", language)
+    val copyLabel = L10n.text("action.copy", language)
+    val shareLabel = L10n.text("action.sharePassage", language)
     Column(Modifier.fillMaxWidth()) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
             Row(
@@ -288,17 +315,39 @@ private fun CommentBlock(model: OhrViewModel, store: CommentaryStore, comment: C
                         )
                     }
                 }
+                // A long press opens copy and share. There is no tap action, so the passage is not
+                // announced as a button; TalkBack users get the same actions from its actions menu.
                 Text(
                     text = hebrewBody(comment.body, size, model.settings.showNikud),
                     textAlign = TextAlign.Start,
                     lineHeight = (size * 1.38f).sp,
                     modifier = Modifier
                         .weight(1f)
-                        .semantics { contentDescription = spoken }
-                        .combinedClickable(
-                            onClick = {},
-                            onLongClick = { menu = true },
-                        ),
+                        .semantics {
+                            contentDescription = spoken
+                            onLongClick(label = actionsLabel) {
+                                menu = true
+                                true
+                            }
+                            customActions = listOf(
+                                CustomAccessibilityAction(copyLabel) {
+                                    copyText(context, passageShare(store, comment, language, model.settings.showNikud))
+                                    true
+                                },
+                                CustomAccessibilityAction(shareLabel) {
+                                    shareText(context, passageShare(store, comment, language, model.settings.showNikud))
+                                    true
+                                },
+                            )
+                        }
+                        .pointerInput(comment.id) {
+                            detectTapGestures(
+                                onLongPress = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    menu = true
+                                },
+                            )
+                        },
                 )
             }
         }
