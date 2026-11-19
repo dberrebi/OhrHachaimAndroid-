@@ -31,6 +31,10 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -60,6 +64,45 @@ val Accent = Color(0xFFC6A15B)
  * the favourite star (3:1). Light mode uses this darker gold instead: 5.34:1 on [BackgroundLight].
  */
 private val AccentLight = Color(0xFF7D5E1F)
+
+/**
+ * Star colours, checked against the 3:1 minimum for meaningful icons. Saved: a brighter gold than
+ * the links, 3.33:1 on the light background; dark mode uses [Accent] (7.7:1). Unsaved: one muted
+ * warm grey for both modes, 3.69:1 on the light background and 4.5:1 on the dark one.
+ */
+private val StarSavedLight = Color(0xFFA47E2C)
+private val StarUnsaved = Color(0xFF857B6D)
+
+/**
+ * Material's "outlined" star is a solid shape, so it is no use for "not saved". This is the same
+ * star drawn as a thin outline.
+ */
+val StarOutline: ImageVector = ImageVector.Builder(
+    name = "StarOutline",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).apply {
+    path(
+        fill = null,
+        stroke = SolidColor(Color.Black),
+        strokeLineWidth = 1.5f,
+        strokeLineJoin = StrokeJoin.Round,
+    ) {
+        moveTo(12f, 17.27f)
+        lineTo(18.18f, 21f)
+        lineTo(16.54f, 13.97f)
+        lineTo(22f, 9.24f)
+        lineTo(14.81f, 8.63f)
+        lineTo(12f, 2f)
+        lineTo(9.19f, 8.63f)
+        lineTo(2f, 9.24f)
+        lineTo(7.46f, 13.97f)
+        lineTo(5.82f, 21f)
+        close()
+    }
+}.build()
 private val BackgroundLight = Color(0xFFF6F1E7)
 private val BackgroundDark = Color(0xFF141210)
 private val TextLight = Color(0xFF221C16)
@@ -74,8 +117,12 @@ data class StudyColors(
     val text: Color,
     val secondary: Color,
     val emphasis: Color,
-    /** Links and the favourite star on the page background. */
+    /** Links on the page background. */
     val accent: Color,
+    /** A saved passage's star: solid gold. */
+    val starSaved: Color,
+    /** An unsaved passage's star: a thin, muted outline, so the page does not look all starred. */
+    val starUnsaved: Color,
     val divider: Color,
     val dark: Boolean,
 )
@@ -86,6 +133,8 @@ private val LightColors = StudyColors(
     secondary = SecondaryLight,
     emphasis = EmphasisLight,
     accent = AccentLight,
+    starSaved = StarSavedLight,
+    starUnsaved = StarUnsaved,
     divider = Color.Black.copy(alpha = 0.14f),
     dark = false,
 )
@@ -96,6 +145,8 @@ private val DarkColors = StudyColors(
     secondary = SecondaryDark,
     emphasis = EmphasisDark,
     accent = Accent,
+    starSaved = Accent,
+    starUnsaved = StarUnsaved,
     divider = Color.White.copy(alpha = 0.16f),
     dark = true,
 )
@@ -216,6 +267,8 @@ fun StudyScaffold(
     onBack: (() -> Unit)?,
     showMark: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
+    /** Replaces the plain [title] text, for example with the reading's aliyah menu. */
+    titleContent: (@Composable () -> Unit)? = null,
     content: @Composable (androidx.compose.foundation.layout.PaddingValues) -> Unit,
 ) {
     val language = LocalLanguage.current
@@ -236,12 +289,16 @@ fun StudyScaffold(
                                 modifier = Modifier.size(28.dp),
                             )
                         }
-                        Text(
-                            text = title,
-                            style = titleStyle(title),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        if (titleContent != null) {
+                            titleContent()
+                        } else {
+                            Text(
+                                text = title,
+                                style = titleStyle(title),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 },
                 navigationIcon = {
