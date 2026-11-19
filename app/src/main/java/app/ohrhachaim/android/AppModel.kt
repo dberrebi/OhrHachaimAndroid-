@@ -29,13 +29,12 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * The privacy page is the one the iOS app opens. It links on to the support page, which has a
- * PayPal donation; linking the privacy page from Android was approved on that basis.
- * The support page (https://dberrebi.github.io/OhrHachaim/) is not linked directly from the app,
- * matching iOS, which defines that URL but never opens it.
+ * The Android privacy policy, published by GitHub Pages from `docs/privacy/index.html` in this
+ * repository. The iOS policy covers only iPhone and iPad, and it links to the iOS support page,
+ * which has a PayPal donation. This page has no outbound links except its email address.
  */
 object AppLinks {
-    const val PRIVACY = "https://dberrebi.github.io/OhrHachaim/privacy/"
+    const val PRIVACY = "https://dberrebi.github.io/OhrHachaimAndroid-/privacy/"
 }
 
 class AppSettings(context: Context) {
@@ -122,7 +121,14 @@ class OhrNav {
     var section by mutableStateOf<HomeDestination?>(null)
     val readings = mutableStateListOf<ReadingRoute>()
 
+    /** Survives opening a result and coming back. A new one starts each time Search is opened. */
+    var search by mutableStateOf(SearchSession())
+        private set
+
     fun open(destination: HomeDestination) {
+        if (destination == HomeDestination.Search && section != HomeDestination.Search) {
+            search = SearchSession()
+        }
         section = destination
         readings.clear()
     }
@@ -182,8 +188,6 @@ class OhrViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var failed by mutableStateOf(false)
         private set
-    var pendingSearch by mutableStateOf<String?>(null)
-
     private var launchApplied = false
 
     init {
@@ -211,7 +215,6 @@ class OhrViewModel(app: Application) : AndroidViewModel(app) {
         launchApplied = true
         intent.getStringExtra("ohr_language")?.let { settings.chooseLanguage(AppLanguage.fromCode(it)) }
         intent.getStringExtra("ohr_appearance")?.let { settings.chooseAppearance(AppearanceChoice.fromCode(it)) }
-        intent.getStringExtra("ohr_search")?.let { pendingSearch = it }
         when (intent.getStringExtra("ohr_screen")) {
             "search" -> nav.open(HomeDestination.Search)
             "settings" -> nav.open(HomeDestination.Settings)
@@ -223,12 +226,7 @@ class OhrViewModel(app: Application) : AndroidViewModel(app) {
             "resume" -> nav.open(HomeDestination.Resume)
             "book" -> nav.open(HomeDestination.Book(intent.getIntExtra("ohr_book", 1)))
         }
-    }
-
-    fun consumePendingSearch(): String {
-        val value = pendingSearch.orEmpty()
-        pendingSearch = null
-        return value
+        intent.getStringExtra("ohr_search")?.let { nav.search.query = it }
     }
 
     override fun onCleared() {

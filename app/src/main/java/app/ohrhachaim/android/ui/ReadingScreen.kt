@@ -174,7 +174,13 @@ private fun TrackReading(
         snapshotFlow { topComment(listState, slop, band) }
             .distinctUntilChanged()
             .collect { pick ->
-                if (pick == null) return@collect
+                if (pick == null) {
+                    // No passage is at the top any more (a heading, a gap note, or the footer is),
+                    // so the passage being timed was scrolled away: do not save it.
+                    dwell?.cancel()
+                    dwell = null
+                    return@collect
+                }
                 if (initialTop == null) initialTop = pick else if (pick != initialTop) hasScrolled = true
                 val wait = if (hasScrolled) SETTLE_MS else OPENING_MS
                 dwell?.cancel()
@@ -194,14 +200,16 @@ private fun TrackReading(
     }
 }
 
+/**
+ * The passage being read: the one under the top edge of the list, so a long passage still counts
+ * after its first lines scroll away; otherwise the first passage that starts within [band] of the
+ * top. Null when only headings, gap notes, or the footer are there.
+ */
 private fun topComment(state: LazyListState, slop: Float, band: Float): Long? {
-    return state.layoutInfo.visibleItemsInfo
-        .asSequence()
-        .filter { it.key is Long }
-        .map { it.key as Long to it.offset.toFloat() }
-        .filter { (_, y) -> y >= -slop && y < band }
-        .minByOrNull { it.second }
-        ?.first
+    val passages = state.layoutInfo.visibleItemsInfo.filter { it.key is Long }
+    val covering = passages.firstOrNull { it.offset <= slop && it.offset + it.size > slop }
+    val starting = passages.filter { it.offset > slop && it.offset < band }.minByOrNull { it.offset }
+    return (covering ?: starting)?.key as Long?
 }
 
 @Composable
@@ -281,7 +289,7 @@ private fun CommentBlock(model: OhrViewModel, store: CommentaryStore, comment: C
                                 if (favourite) "a11y.removeFavourite" else "a11y.addFavourite",
                                 language,
                             ),
-                            tint = Accent,
+                            tint = LocalColors.current.accent,
                         )
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

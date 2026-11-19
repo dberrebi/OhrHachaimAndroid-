@@ -184,11 +184,40 @@ class OhrTests {
             library.note(comment(id = 100L + index, parashaId = 100 + index, chapter = 1, verse = 1))
         }
         assertEquals(40, library.history.size)
-        library.flush()
+        library.flush().get()
         val reloaded = UserLibrary(file)
         assertEquals(40, reloaded.history.size)
         assertEquals(library.history[0].commentId, reloaded.history[0].commentId)
         assertEquals(library.lastCommentId, reloaded.lastCommentId)
+        library.close()
+        reloaded.close()
+    }
+
+    @Test
+    fun returningToAnEarlierParashaKeepsResumeAndHistoryTogether() {
+        // Read A, then B, then come back to the same passage in A.
+        val file = tempLibrary()
+        val library = UserLibrary(file, saveDelayMillis = 0)
+        val a = comment(id = 10, parashaId = 1, chapter = 1, verse = 1)
+        val b = comment(id = 20, parashaId = 2, chapter = 6, verse = 9)
+        library.note(a)
+        library.note(b)
+        library.note(a)
+        assertEquals(10L, library.lastCommentId)
+        assertEquals(listOf(1, 2), library.history.map { it.parashaId })
+
+        // No flush: the save that note() schedules must reach the disk by itself.
+        library.awaitWrites()
+        val reloaded = UserLibrary(file)
+        assertEquals(10L, reloaded.lastCommentId)
+        assertEquals(listOf(1, 2), reloaded.history.map { it.parashaId })
+        assertEquals(listOf(10L, 20L), reloaded.history.map { it.commentId })
+
+        // Noting the passage that is already first and already Resume changes nothing.
+        val before = file.readText()
+        library.note(a)
+        library.awaitWrites()
+        assertEquals(before, file.readText())
         library.close()
         reloaded.close()
     }
@@ -224,6 +253,7 @@ class OhrTests {
                 UserLibrary(file, clockMillis = { 1_795_000_000_000L }).apply {
                     note(comment(id = 1, parashaId = 1, chapter = 1, verse = 1))
                     close()
+                    awaitWrites()
                 }
                 assertTrue(file.readText().contains("\"2026-11-18T"))
             }
@@ -285,7 +315,7 @@ class OhrTests {
         library.toggleFavourite(5)
         library.note(comment(id = 6, parashaId = 1, chapter = 1, verse = 3))
         library.toggleFavourite(6)
-        library.flush()
+        library.flush().get()
         val reloaded = UserLibrary(file)
         assertEquals(listOf(6L, 5L), reloaded.favouriteIds)
         assertEquals(6L, reloaded.lastCommentId)

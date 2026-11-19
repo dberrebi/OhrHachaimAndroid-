@@ -2,7 +2,10 @@ package app.ohrhachaim.core
 
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.CancellationException
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
@@ -28,6 +31,7 @@ data class HistoryEntry(
 class UserLibrary(
     private val file: File,
     private val clockMillis: () -> Long = { System.currentTimeMillis() },
+    private val saveDelayMillis: Long = 400,
 ) {
     var lastCommentId: Long? = null
         private set
@@ -56,16 +60,23 @@ class UserLibrary(
         saveNow()
     }
 
-    /** Records reading progress for the parasha. Scrolling inside one parasha updates that row. */
+    /**
+     * Records reading progress for the parasha. Scrolling inside one parasha updates that row.
+     * The parasha read most recently is always first in History, matching Resume: returning to a
+     * passage already saved for an older parasha moves that row back to the top.
+     */
     fun note(comment: Comment) {
+        val previousLast = lastCommentId
         lastCommentId = comment.id
         val index = history.indexOfFirst { it.parashaId == comment.parashaId }
         if (index >= 0) {
             val current = history[index]
-            if (current.commentId == comment.id &&
+            val samePlace = current.commentId == comment.id &&
                 current.chapter == comment.chapter &&
                 current.verse == comment.verse
-            ) {
+            if (samePlace && index == 0) {
+                // Already first with this passage. Save only if Resume pointed elsewhere.
+                if (previousLast != comment.id) scheduleSave()
                 return
             }
             val updated = current.copy(
@@ -74,11 +85,7 @@ class UserLibrary(
                 verse = comment.verse,
                 date = nowIso(),
             )
-            history = if (index == 0) {
-                history.toMutableList().also { it[0] = updated }
-            } else {
-                listOf(updated) + history.filterIndexed { i, _ -> i != index }
-            }
+            history = listOf(updated) + history.filterIndexed { i, _ -> i != index }
         } else {
             val entry = HistoryEntry(
                 commentId = comment.id,
@@ -99,25 +106,43 @@ class UserLibrary(
         return ReadingRoute.Introduction(comment.id)
     }
 
-    /** Writes the current state and waits for it, for example when the app goes to the background. */
-    fun flush() {
-        val done = synchronized(this) {
-            if (writer.isShutdown) return
+    /**
+     * Writes the current state now, without waiting for the 400ms delay, for example when the app
+     * goes to the background. It does not block the caller: the write runs on the library thread,
+     * and the returned future completes when it is on disk.
+     */
+    fun flush(): Future<*> {
+        synchronized(this) {
+            if (writer.isShutdown) return CompletableFuture.completedFuture(null)
             pending?.cancel(false)
             pending = null
             val snapshot = snapshot()
-            writer.submit { write(snapshot) }
-        }
-        try {
-            done.get(5, TimeUnit.SECONDS)
-        } catch (_: Exception) {
-            // The write is still queued, or failed and left the previous file in place.
+            return writer.submit { write(snapshot) }
         }
     }
 
+    /** Queues a final write and stops the library thread once the queued writes are done. */
     fun close() {
-        flush()
-        synchronized(this) { writer.shutdown() }
+        synchronized(this) {
+            flush()
+            writer.shutdown()
+        }
+    }
+
+    /** Tests: waits until every write requested so far, including a delayed one, has finished. */
+    internal fun awaitWrites() {
+        val delayed = synchronized(this) { pending }
+        try {
+            delayed?.get(5, TimeUnit.SECONDS)
+        } catch (_: CancellationException) {
+            // Replaced by a newer write, which the check below waits for.
+        }
+        if (writer.isShutdown) {
+            writer.awaitTermination(5, TimeUnit.SECONDS)
+        } else {
+            // The writer runs tasks in order, so everything queued earlier is done after this one.
+            writer.submit {}.get(5, TimeUnit.SECONDS)
+        }
     }
 
     /** Queues a write of the current state without waiting for it. */
@@ -146,7 +171,7 @@ class UserLibrary(
             if (writer.isShutdown) return
             pending?.cancel(false)
             val snapshot = snapshot()
-            pending = writer.schedule({ write(snapshot) }, 400, TimeUnit.MILLISECONDS)
+            pending = writer.schedule({ write(snapshot) }, saveDelayMillis, TimeUnit.MILLISECONDS)
         }
     }
 
