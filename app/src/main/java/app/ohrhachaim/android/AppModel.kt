@@ -29,13 +29,12 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * The privacy page is the one the iOS app opens. It links on to the support page, which has a
- * PayPal donation; linking the privacy page from Android was approved on that basis.
- * The support page (https://dberrebi.github.io/OhrHachaim/) is not linked directly from the app,
- * matching iOS, which defines that URL but never opens it.
+ * The Android privacy policy, published by GitHub Pages from `docs/privacy/index.html` in this
+ * repository. The iOS policy covers only iPhone and iPad, and it links to the iOS support page,
+ * which has a PayPal donation. This page has no outbound links except its email address.
  */
 object AppLinks {
-    const val PRIVACY = "https://dberrebi.github.io/OhrHachaim/privacy/"
+    const val PRIVACY = "https://dberrebi.github.io/OhrHachaimAndroid-/privacy/"
 }
 
 class AppSettings(context: Context) {

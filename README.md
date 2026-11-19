@@ -63,6 +63,6 @@ On a wide window the home list stays beside the detail, with a welcome pane unti
 
 ## Not in this version
 
-No Play upload, no Play Billing, no PayPal link, and no donate button. The iOS support site is not linked: that page includes a PayPal donation. Settings and About open the iOS privacy URL, which is what the iOS app does. That page links on to the support page; linking it from Android was approved. The support page itself is not linked from the app. See `AppLinks`.
+No Play upload, no Play Billing, no PayPal link, and no donate button. The iOS support site is not linked: that page includes a PayPal donation. Settings and About open the Android privacy policy, `docs/privacy/index.html`, published by GitHub Pages at https://dberrebi.github.io/OhrHachaimAndroid-/privacy/ (Settings → Pages → Deploy from a branch → `main`, `/docs`). It is in Hebrew and English and links nowhere except its email address. The iOS policy covers only iPhone and iPad and links to the iOS support page, which has a PayPal donation, so the Android app does not link it. When the app's data handling changes, update this page and its date before the release. See `AppLinks`.
 
 No widgets, notifications, accounts, or sync. History, favourites, and settings stay on the device. Backup of app data is turned off.
