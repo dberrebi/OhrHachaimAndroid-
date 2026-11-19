@@ -42,7 +42,7 @@ Earlier notes:
 
 ## Automatic uploads from GitHub
 
-Live since 19 Nov 2026. `.github/workflows/play-publish.yml` builds a signed bundle on every push to `main` and uploads it to the **internal testing** track, with the release notes from `play/whatsnew/`. Every merge to `main` is therefore an upload, so changes go through pull requests. The workflow never publishes to production: promote a tested build in Play Console.
+Live since 19 Nov 2026. `.github/workflows/play-publish.yml` builds a signed bundle and uploads it to the **internal testing** track, with the release notes from `play/whatsnew/`, whenever a merge to `main` changes the app: `app/`, `core/`, `data/`, `gradle/`, or the root build files. Merges that leave the app as it was (documentation, release notes alone, the workflows, `scripts/`) do not upload; to upload anyway, run the workflow by hand (Actions → Publish to Google Play → Run workflow, track `internal`). Changes still go through pull requests. The workflow never publishes to production: promote a tested build in Play Console.
 
 ### Sending a build to closed testing
 
@@ -78,8 +78,9 @@ CI builds use **100 + the workflow's run number**, so each run gets a new code. 
 | 1 | 1.0 | Hand | Internal testing | First upload, registered the upload key |
 | 2 | 1.1 | Hand (`ohr-hachaim-1.1-2.aab`) | Closed testing - Alpha | In Google's first review since 19 Nov 2026 |
 | 102 | 1.1 | CI, run 44579959643 (run number 2, manual) from `main` at `c288d98` | Internal testing | First automatic upload |
+| 103 | 1.1 | CI, run 44587024317 (run number 3, merge of #6) from `main` at `8998e25` | Internal testing | First upload with release notes from `play/whatsnew/`; the app is the same as 102 |
 
-The next CI build is 103 or higher. Add a row here when a build is promoted or a hand-made one is uploaded.
+The next CI build is 104 or higher. Run numbers also count runs that upload nothing, so codes can skip. Add a row here when a build is promoted or a hand-made one is uploaded.
 
 ## Create the app
 

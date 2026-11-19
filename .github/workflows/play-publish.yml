@@ -1,7 +1,8 @@
 name: Publish to Google Play
 
-# Every push to main builds a signed bundle and uploads it to Play's internal testing track.
-# Run it by hand (Actions → Publish to Google Play → Run workflow) to send a build to closed
+# A push to main that changes the app builds a signed bundle and uploads it to Play's internal
+# testing track. Changes that leave the app as it was (documentation, release notes alone, the
+# workflows, scripts) do not upload. Run it by hand (Actions → Publish to Google Play → Run workflow) to send a build to closed
 # testing instead. Production is never published from here: promote a tested build in Play Console.
 #
 # It needs three repository secrets (Settings → Secrets and variables → Actions):
@@ -14,6 +15,15 @@ name: Publish to Google Play
 on:
   push:
     branches: [main]
+    # Only what goes into the app: its code, resources and bundled data, and the build setup.
+    paths:
+      - "app/**"
+      - "core/**"
+      - "data/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradle/**"
   workflow_dispatch:
     inputs:
       track:
