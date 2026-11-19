@@ -59,6 +59,10 @@ jobs:
 
       - uses: actions/checkout@v5
         if: steps.secrets.outputs.ready == 'true'
+        with:
+          # Don't leave the job's GitHub token in .git/config, where later steps,
+          # including the third-party upload action, could read it.
+          persist-credentials: false
 
       - uses: actions/setup-java@v5
         if: steps.secrets.outputs.ready == 'true'
@@ -110,6 +114,8 @@ jobs:
           whatsNewDirectory: play/whatsnew
           status: completed
 
-      - name: Remove the upload key
+      # The upload action writes the service account key to serviceAccountJson.json in the
+      # workspace. GitHub deletes hosted runners after each job; remove the files anyway.
+      - name: Remove the upload key and the service account key
         if: always() && steps.secrets.outputs.ready == 'true'
-        run: rm -f keystore.properties "$RUNNER_TEMP/upload.jks"
+        run: rm -f keystore.properties "$RUNNER_TEMP/upload.jks" serviceAccountJson.json
