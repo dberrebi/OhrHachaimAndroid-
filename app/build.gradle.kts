@@ -1,7 +1,15 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+}
+
+// The Play upload key. It is never committed: `keystore.properties` and `*.jks` are in .gitignore.
+// Without the file, release builds are unsigned, as before; see play/README.md to sign one.
+val uploadKey = rootProject.file("keystore.properties").takeIf { it.isFile }?.let { file ->
+    Properties().apply { file.inputStream().use { load(it) } }
 }
 
 android {
@@ -19,8 +27,20 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        if (uploadKey != null) {
+            create("upload") {
+                storeFile = rootProject.file(uploadKey.getProperty("storeFile"))
+                storePassword = uploadKey.getProperty("storePassword")
+                keyAlias = uploadKey.getProperty("keyAlias")
+                keyPassword = uploadKey.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (uploadKey != null) signingConfig = signingConfigs.getByName("upload")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
