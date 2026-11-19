@@ -9,7 +9,7 @@ Everything Play Console asks for, ready to paste. The text was checked against P
 | App bundle | `app/build/outputs/bundle/release/app-release.aab` after `./gradlew bundleRelease` (see "Signing") |
 | App icon, 512 × 512 PNG | `play/graphics/icon-512.png` |
 | Feature graphic, 1024 × 500 PNG | `play/graphics/feature-graphic.png` |
-| Phone screenshots, at least 2 | Not made yet. Take them on a phone from the closed-test build: Home, This week, a reading, Search. |
+| Phone screenshots, at least 2 | Three uploaded in Play Console on 19 Nov 2026, taken from the testing build. They are not stored in this repository. |
 | Privacy policy URL | https://dberrebi.github.io/OhrHachaimAndroid-/privacy/ |
 
 ## Signing
@@ -30,33 +30,56 @@ Then run `./gradlew bundleRelease`. Without `keystore.properties`, release build
 Upload key certificate, SHA-256 (not secret; Play Console shows the same value after the first upload):
 `28:B8:CD:B8:F9:40:C2:B9:C2:7D:8B:AC:38:10:17:F3:6B:9C:A3:3B:42:AC:CD:39:AA:21:B8:77:AF:FA:DB:55`
 
-Before each new upload, raise `versionCode` in `app/build.gradle.kts` (1, 2, 3, …). Play rejects a bundle whose version code it has seen.
+Play rejects a bundle whose version code it has seen. Uploads now normally come from the workflow (see "Automatic uploads"), which numbers them itself. A hand-made bundle needs a version code above the last one CI used: build it with `./gradlew bundleRelease -Pohr.versionCode=<number>`. Don't change the scheme without the owner.
 
 ## Release notes
 
-Paste into the release in Play Console. Before uploading a new bundle, raise `versionCode` (see Signing).
+The current notes live in `play/whatsnew/`, one file per Play locale: `whatsnew-iw-IL` (Hebrew) and `whatsnew-en-US` (English). Plain text, at most 500 characters each. The workflow attaches them to every upload; for a hand-made release, paste the same text. **Update both files in the same pull request as any change users will notice**, because merging it uploads a build with whatever they say.
 
-1.1 (versionCode 2):
-- Hebrew: `תפריט עליות בכותרת הקריאה: ראשון עד שביעי, עם סימון העלייה של היום בפרשת השבוע. כוכב המועדפים מבחין עכשיו בבירור בין קטע שמור לקטע שאינו שמור.`
-- English: `Aliyah menu in the reading title: Rishon to Shevi'i, with today's aliyah marked in this week's parasha. Favourite stars now clearly show which passages are saved.`
-
-1.0 (versionCode 1): `גרסה ראשונה.` / `First release.`
+Earlier notes:
+- 1.1: the text now in `play/whatsnew/`.
+- 1.0: `גרסה ראשונה.` / `First release.`
 
 ## Automatic uploads from GitHub
 
-`.github/workflows/play-publish.yml` builds a signed bundle on every push to `main` and uploads it to the **internal testing** track. Run it by hand (Actions → Publish to Google Play → Run workflow → track `alpha`) to send a build to closed testing. It never publishes to production: promote a tested build in Play Console.
+Live since 19 Nov 2026. `.github/workflows/play-publish.yml` builds a signed bundle on every push to `main` and uploads it to the **internal testing** track, with the release notes from `play/whatsnew/`. Every merge to `main` is therefore an upload, so changes go through pull requests. The workflow never publishes to production: promote a tested build in Play Console.
 
-It needs three repository secrets, under Settings → Secrets and variables → Actions:
+### Sending a build to closed testing
+
+Actions → Publish to Google Play → Run workflow → branch `main`, track `alpha` (Play's "Closed testing - Alpha" track). Each manual run also takes a new version code. Closed-track releases go through Google's review. While a review is pending (the first one was sent on 19 Nov 2026), a closed-track upload is added to the changes under review rather than replacing them.
+
+### Google side
+
+| Item | Value |
+| --- | --- |
+| Google Cloud project | `ohr-hachaim-play`, with the Google Play Android Developer API enabled |
+| Service account | `play-publisher@ohr-hachaim-play.iam.gserviceaccount.com`. It has no Cloud roles. Its JSON key is the `PLAY_SERVICE_ACCOUNT_JSON` secret |
+| Play Console access | Users and permissions, app-level for this app only: "View app information" and "Release apps to testing tracks". Play adds "View app quality information" by itself. No account-wide permissions and no production release permission, so the key cannot publish to production even if the workflow asked it to |
+| API access linking | Not needed. Play Console's old Setup → API access page, which linked a Cloud project, no longer exists. Inviting the service account under Users and permissions is enough |
+
+### Repository secrets
+
+Settings → Secrets and variables → Actions. All three are set; don't change them without the owner. If one is missing, the workflow skips the upload and stays green.
 
 | Secret | Value |
 | --- | --- |
-| `PLAY_SERVICE_ACCOUNT_JSON` | The JSON key of a Google Cloud service account, with the Google Play Android Developer API enabled in its project. Invite the account in Play Console under Users and permissions, with "Release apps to testing tracks" and "View app information" for this app only |
+| `PLAY_SERVICE_ACCOUNT_JSON` | The service account's JSON key |
 | `UPLOAD_KEYSTORE_BASE64` | The upload keystore, base64-encoded. In PowerShell: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("ohr-hachaim-upload.jks"))` |
 | `UPLOAD_KEYSTORE_PASSWORD` | The keystore password |
 
-Until all three exist, the workflow skips the upload and stays green. Google's API only accepts uploads after the first bundle has been uploaded by hand in Play Console. If Play answers "Only releases with status draft may be created on draft app", finish the first internal rollout in Play Console, then re-run the workflow.
+If Play ever answers "Only releases with status draft may be created on draft app", finish a rollout by hand in Play Console, then re-run the workflow.
 
-CI builds use version code 100 + the run number. After the first CI upload, upload only through the workflow, or give a hand-made build a version code above the last CI one.
+### Version codes
+
+CI builds use **100 + the workflow's run number**, so each run gets a new code. A hand-made bundle must use a code above the last CI one. Don't change the scheme without the owner.
+
+| Version code | Version | Made by | Track | Notes |
+| --- | --- | --- | --- | --- |
+| 1 | 1.0 | Hand | Internal testing | First upload, registered the upload key |
+| 2 | 1.1 | Hand (`ohr-hachaim-1.1-2.aab`) | Closed testing - Alpha | In Google's first review since 19 Nov 2026 |
+| 102 | 1.1 | CI, run 44579959643 (run number 2, manual) from `main` at `c288d98` | Internal testing | First automatic upload |
+
+The next CI build is 103 or higher. Add a row here when a build is promoted or a hand-made one is uploaded.
 
 ## Create the app
 
@@ -167,11 +190,11 @@ Policy and programs → App content. Answers that match what the app does:
 
 New personal accounts must run a closed test with at least **12 testers who stay opted in for 14 days in a row** before applying for production.
 
+Status on 19 Nov 2026: track "Closed testing - Alpha" (`alpha`), all 178 countries, testers from the email list "Owner" (3 people so far), release "1.1 (2)" in Google's first review. Steps 1–5 are done; continue at step 5's "After approval".
+
 1. Test and release → Testing → Closed testing → Create track (or use "Alpha").
 2. Testers: create an email list with at least 12 Google account emails (12 is the minimum; add a few spares in case someone opts out).
-3. Create a release, upload `app-release.aab`, release name `1.0 (1)`, release notes:
-   - Hebrew: `גרסה ראשונה.`
-   - English: `First release.`
+3. Create a release with the bundle and the notes from `play/whatsnew/`. Later closed-track builds can come from the workflow (see "Sending a build to closed testing").
 4. Countries: choose where testers are (for example Israel, United States, and others as needed).
 5. Send for review. After approval, copy the opt-in link from the track and send it to the testers. Each tester opens the link, taps "Become a tester", then installs from Play.
 6. Ask testers to open the app a few times during the 14 days. Google asks about tester engagement when you apply.

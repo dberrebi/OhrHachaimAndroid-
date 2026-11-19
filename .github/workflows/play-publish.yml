@@ -47,10 +47,10 @@ jobs:
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.secrets.outputs.ready == 'true'
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         if: steps.secrets.outputs.ready == 'true'
         with:
           distribution: temurin
@@ -87,13 +87,17 @@ jobs:
 
       - name: Upload to Google Play
         if: steps.secrets.outputs.ready == 'true'
-        # r0adkll/upload-google-play v1.1.5, pinned to its commit.
+        # r0adkll/upload-google-play v1.1.5 (still the latest release), pinned to its commit.
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: app.ohrhachaim.android
           releaseFiles: app/build/outputs/bundle/release/app-release.aab
-          track: ${{ inputs.track || 'internal' }}
+          # "tracks" replaces the deprecated "track". It must never be empty: the action then
+          # defaults to production. A push has no inputs, so it falls back to internal.
+          tracks: ${{ inputs.track || 'internal' }}
+          # Release notes per language, from play/whatsnew/whatsnew-<locale> (iw-IL, en-US).
+          whatsNewDirectory: play/whatsnew
           status: completed
 
       - name: Remove the upload key
