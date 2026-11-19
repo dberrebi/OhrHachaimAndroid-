@@ -32,6 +32,32 @@ Upload key certificate, SHA-256 (not secret; Play Console shows the same value a
 
 Before each new upload, raise `versionCode` in `app/build.gradle.kts` (1, 2, 3, …). Play rejects a bundle whose version code it has seen.
 
+## Release notes
+
+Paste into the release in Play Console. Before uploading a new bundle, raise `versionCode` (see Signing).
+
+1.1 (versionCode 2):
+- Hebrew: `תפריט עליות בכותרת הקריאה: ראשון עד שביעי, עם סימון העלייה של היום בפרשת השבוע. כוכב המועדפים מבחין עכשיו בבירור בין קטע שמור לקטע שאינו שמור.`
+- English: `Aliyah menu in the reading title: Rishon to Shevi'i, with today's aliyah marked in this week's parasha. Favourite stars now clearly show which passages are saved.`
+
+1.0 (versionCode 1): `גרסה ראשונה.` / `First release.`
+
+## Automatic uploads from GitHub
+
+`.github/workflows/play-publish.yml` builds a signed bundle on every push to `main` and uploads it to the **internal testing** track. Run it by hand (Actions → Publish to Google Play → Run workflow → track `alpha`) to send a build to closed testing. It never publishes to production: promote a tested build in Play Console.
+
+It needs three repository secrets, under Settings → Secrets and variables → Actions:
+
+| Secret | Value |
+| --- | --- |
+| `PLAY_SERVICE_ACCOUNT_JSON` | The JSON key of a Google Cloud service account, with the Google Play Android Developer API enabled in its project. Invite the account in Play Console under Users and permissions, with "Release apps to testing tracks" and "View app information" for this app only |
+| `UPLOAD_KEYSTORE_BASE64` | The upload keystore, base64-encoded. In PowerShell: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("ohr-hachaim-upload.jks"))` |
+| `UPLOAD_KEYSTORE_PASSWORD` | The keystore password |
+
+Until all three exist, the workflow skips the upload and stays green. Google's API only accepts uploads after the first bundle has been uploaded by hand in Play Console. If Play answers "Only releases with status draft may be created on draft app", finish the first internal rollout in Play Console, then re-run the workflow.
+
+CI builds use version code 100 + the run number. After the first CI upload, upload only through the workflow, or give a hand-made build a version code above the last CI one.
+
 ## Create the app
 
 All apps → Create app:
