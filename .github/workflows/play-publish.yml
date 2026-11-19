@@ -1,0 +1,101 @@
+name: Publish to Google Play
+
+# Every push to main builds a signed bundle and uploads it to Play's internal testing track.
+# Run it by hand (Actions → Publish to Google Play → Run workflow) to send a build to closed
+# testing instead. Production is never published from here: promote a tested build in Play Console.
+#
+# It needs three repository secrets (Settings → Secrets and variables → Actions):
+#   PLAY_SERVICE_ACCOUNT_JSON   JSON key of a service account invited in Play Console with
+#                               "Release apps to testing tracks" for this app
+#   UPLOAD_KEYSTORE_BASE64      the upload keystore (ohr-hachaim-upload.jks), base64-encoded
+#   UPLOAD_KEYSTORE_PASSWORD    its password (the keystore and the key "upload" share it)
+# Until all three exist, the job skips the upload and stays green. See play/README.md.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      track:
+        description: Play track ("alpha" is the default closed testing track)
+        type: choice
+        options: [internal, alpha]
+        default: internal
+
+concurrency:
+  group: play-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for the Play secrets
+        id: secrets
+        env:
+          SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          KEYSTORE: ${{ secrets.UPLOAD_KEYSTORE_BASE64 }}
+          PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$SERVICE_ACCOUNT" ] && [ -n "$KEYSTORE" ] && [ -n "$PASSWORD" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::The Play secrets are not set yet, so nothing was uploaded. See play/README.md."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ready == 'true'
+
+      - uses: actions/setup-java@v4
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Android SDK 36
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+            ANDROID_HOME=/usr/local/lib/android/sdk
+          fi
+          sdkmanager=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -1)
+          test -n "$sdkmanager"
+          yes | "$sdkmanager" --sdk_root="$ANDROID_HOME" --licenses >/dev/null || true
+          "$sdkmanager" --sdk_root="$ANDROID_HOME" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Write the upload key
+        if: steps.secrets.outputs.ready == 'true'
+        env:
+          KEYSTORE: ${{ secrets.UPLOAD_KEYSTORE_BASE64 }}
+          PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD }}
+        run: |
+          printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=upload\nkeyPassword=%s\n' \
+            "$RUNNER_TEMP/upload.jks" "$PASSWORD" "$PASSWORD" > keystore.properties
+
+      # Play needs a new version code for every upload. CI builds use 100 + the run number, above
+      # the hand-made 1.0 (1) and 1.1 (2). After the first CI upload, upload only from here, or
+      # give a hand-made build a version code above the last CI one.
+      - name: Build the signed bundle
+        if: steps.secrets.outputs.ready == 'true'
+        run: ./gradlew bundleRelease test -Pohr.versionCode=$((100 + GITHUB_RUN_NUMBER)) --stacktrace
+
+      - name: Upload to Google Play
+        if: steps.secrets.outputs.ready == 'true'
+        # r0adkll/upload-google-play v1.1.5, pinned to its commit.
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: app.ohrhachaim.android
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          track: ${{ inputs.track || 'internal' }}
+          status: completed
+
+      - name: Remove the upload key
+        if: always() && steps.secrets.outputs.ready == 'true'
+        run: rm -f keystore.properties "$RUNNER_TEMP/upload.jks"

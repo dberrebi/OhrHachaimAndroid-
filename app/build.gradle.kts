@@ -23,8 +23,10 @@ android {
         applicationId = "app.ohrhachaim.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        // Hand-made builds use this number. The Play workflow passes -Pohr.versionCode so every
+        // upload gets a new one (see .github/workflows/play-publish.yml).
+        versionCode = (findProperty("ohr.versionCode") as String?)?.toInt() ?: 2
+        versionName = "1.1"
     }
 
     signingConfigs {

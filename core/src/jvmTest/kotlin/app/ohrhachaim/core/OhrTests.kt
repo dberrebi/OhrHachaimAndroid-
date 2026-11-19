@@ -358,6 +358,87 @@ class OhrTests {
         }
     }
 
+    @Test
+    fun aliyotCoverEveryParashaAndEveryCombinedWeek() {
+        for (id in 1..54) {
+            val aliyot = Aliyot.forParashot(listOf(id))!!
+            assertEquals((1..7).toList(), aliyot.map { it.number })
+            aliyot.zipWithNext().forEach { (a, b) -> assertTrue("parasha $id", a.end < b.start) }
+        }
+        val bereshit = Aliyot.forParashot(listOf(1))!!
+        assertEquals(VersePlace(1, 1), bereshit[0].start)
+        assertEquals(VersePlace(2, 4), bereshit[1].start)
+        assertEquals(VersePlace(6, 8), bereshit[6].end)
+
+        val vayakhelPekudei = Aliyot.forParashot(listOf(22, 23))!!
+        assertEquals(VersePlace(35, 1), vayakhelPekudei.first().start)
+        assertEquals(VersePlace(40, 38), vayakhelPekudei.last().end)
+
+        assertNull(Aliyot.forParashot(emptyList()))
+        assertNull(Aliyot.forParashot(listOf(55)))
+        assertNull(Aliyot.forParashot(listOf(1, 2)))
+
+        // Every reading the calendar can open, single or combined, has aliyot.
+        store().use { store ->
+            store.weekly.forEach { reading ->
+                assertNotNull(reading.id, Aliyot.forParashot(reading.parashaIds))
+            }
+        }
+    }
+
+    @Test
+    fun aliyahLayoutFindsTheFirstRowAndNamesIt() {
+        val aliyot = Aliyot.forParashot(listOf(1))!!
+        assertEquals(1, Aliyot.numberAt(aliyot, VersePlace(1, 1)))
+        assertEquals(1, Aliyot.numberAt(aliyot, VersePlace(2, 3)))
+        assertEquals(2, Aliyot.numberAt(aliyot, VersePlace(2, 4)))
+        assertEquals(7, Aliyot.numberAt(aliyot, VersePlace(6, 8)))
+
+        // A heading, verses 1:1 and 1:5, then 2:6 (aliyah 2 starts at 2:4 but has no row there), footer.
+        val spans = listOf(null, RowSpan.verse(1, 1), RowSpan.verse(1, 5), RowSpan.verse(2, 6), null)
+        val layout = Aliyot.layout(aliyot, spans)
+        assertEquals(listOf(1, 1, 1, 2, 2), layout.rowAliyah.toList())
+        assertEquals(1, layout.targets[0])
+        assertEquals(3, layout.targets[1])
+        assertNull(layout.targets[2])
+        assertEquals(listOf(emptyList(), listOf(1), emptyList(), listOf(2), emptyList()), layout.labels)
+    }
+
+    @Test
+    fun aliyotInsideAChapterWithoutCommentary() {
+        // Bechukotai: aliyot 4-7 are all in chapter 27, which has no commentary in this edition.
+        store().use { store ->
+            val spans = mutableListOf<RowSpan?>()
+            val byChapter = store.comments(33).groupBy { it.chapter }
+            for (chapter in (byChapter.keys + store.gapChapters(33)).sorted()) {
+                val verses = byChapter[chapter].orEmpty()
+                if (verses.isEmpty()) {
+                    spans += RowSpan.chapter(chapter)
+                } else {
+                    verses.map { it.verse }.distinct().sorted().forEach { spans += RowSpan.verse(chapter, it) }
+                }
+            }
+            val gap = spans.indexOf(RowSpan.chapter(27))
+            assertTrue(gap > 0)
+            val layout = Aliyot.layout(Aliyot.forParashot(listOf(33))!!, spans)
+            assertEquals(listOf(gap, gap, gap, gap), layout.targets.drop(3))
+            assertEquals(listOf(4, 5, 6, 7), layout.labels[gap])
+            assertEquals(listOf(1), layout.labels[0])
+            assertTrue(layout.targets.take(3).all { it != null && it < gap })
+        }
+    }
+
+    @Test
+    fun todaysAliyahCountsDownToShabbat() {
+        val vayetzei = WeeklyReading("2026-11-21", true, "Parashat Vayetzei", "11 Kislev 5787", listOf(7), "shabbat")
+        assertEquals(1, Aliyot.todays(vayetzei, day("2026-11-15"))) // Sunday
+        assertEquals(6, Aliyot.todays(vayetzei, day("2026-11-20"))) // Friday
+        assertEquals(7, Aliyot.todays(vayetzei, day("2026-11-21"))) // Shabbat
+        assertNull(Aliyot.todays(vayetzei, day("2026-11-14")))
+        assertNull(Aliyot.todays(vayetzei, day("2026-11-22")))
+        assertNull(Aliyot.todays(vayetzei.copy(kind = "simchat_torah"), day("2026-11-20")))
+    }
+
     private fun bundle(database: ByteArray): (String) -> java.io.InputStream = { name ->
         when (name) {
             DatabaseInstaller.MANIFEST -> manifestFor(database).byteInputStream()
